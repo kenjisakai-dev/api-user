@@ -1,0 +1,39 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api
+    ports:
+      - "3335:3335"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://user123:user123@db:5432/db?schema=public
+      PORT: 3335
+    networks:
+      - api-network
+
+  db:
+    image: "bitnami/postgresql:latest"
+    container_name: db
+    environment:
+      POSTGRESQL_USERNAME: user123
+      POSTGRESQL_PASSWORD: user123
+      POSTGRESQL_DATABASE: db
+    ports:
+      - "5555:5432"
+    networks:
+      - api-network
+    volumes:
+      - api-volume:/var/lib/postgresql/data
+
+networks:
+  api-network:
+    name: api-network
+    external: true
+
+volumes:
+  api-volume:
+    name: api-volume
+    external: true
