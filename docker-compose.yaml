@@ -17,23 +17,22 @@ services:
   db:
     image: "bitnami/postgresql:latest"
     container_name: db
+    user: root
     environment:
       POSTGRESQL_USERNAME: user123
       POSTGRESQL_PASSWORD: user123
       POSTGRESQL_DATABASE: db
     ports:
-      - "5555:5432"
+      - "5432:5432"
     networks:
       - api-network
     volumes:
-      - api-volume:/var/lib/postgresql/data
+      - api-volume:/bitnami/postgresql/data
 
 networks:
   api-network:
     name: api-network
-    external: true
 
 volumes:
   api-volume:
     name: api-volume
-    external: true
