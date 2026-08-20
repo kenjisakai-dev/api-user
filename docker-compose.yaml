@@ -9,8 +9,8 @@ services:
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgresql://user123:user123@db:5432/db?schema=public
-      PORT: 3335
+      DATABASE_URL: postgresql://${LIMITED_DB_USERNAME}:${LIMITED_DB_PASSWORD}@db:5432/${POSTGRESQL_DATABASE}?schema=public
+      PORT: ${PORT}
     networks:
       - api-network
 
@@ -19,15 +19,19 @@ services:
     container_name: db
     user: root
     environment:
-      POSTGRESQL_USERNAME: user123
-      POSTGRESQL_PASSWORD: user123
-      POSTGRESQL_DATABASE: db
+      POSTGRESQL_POSTGRES_PASSWORD: ${POSTGRESQL_POSTGRES_PASSWORD}
+      POSTGRESQL_USERNAME: ${POSTGRESQL_USERNAME}
+      POSTGRESQL_PASSWORD: ${POSTGRESQL_PASSWORD}
+      POSTGRESQL_DATABASE: ${POSTGRESQL_DATABASE}
+      LIMITED_DB_USERNAME: ${LIMITED_DB_USERNAME}
+      LIMITED_DB_PASSWORD: ${LIMITED_DB_PASSWORD}
     ports:
       - "5432:5432"
     networks:
       - api-network
     volumes:
       - api-volume:/bitnami/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
 
 networks:
   api-network:

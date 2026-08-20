@@ -74,16 +74,49 @@ Invoke-RestMethod -Method Post http://localhost:3335/registers
 
 Uma resposta sem erro indica que a API conseguiu resolver o container `db`, autenticar no PostgreSQL e executar a operação do Prisma.
 
-## Variáveis de ambiente
+Para confirmar que os dois containers estão na mesma rede `api-network`:
 
-As variáveis usadas pelo Compose são:
-
-```text
-DATABASE_URL=postgresql://user123:user123@db:5432/db?schema=public
-PORT=3335
+```powershell
+docker network inspect api-network
 ```
 
-O usuário, a senha e o nome do banco correspondem às variáveis `POSTGRESQL_USERNAME`, `POSTGRESQL_PASSWORD` e `POSTGRESQL_DATABASE` do container PostgreSQL.
+Na saída, os containers `api` e `db` devem aparecer na seção `Containers`.
+
+## Variáveis de ambiente
+
+Nenhum valor sensível fica hardcoded no código ou no `docker-compose.yaml`: todas as configurações vêm de variáveis de ambiente, lidas de um arquivo `.env` na raiz do projeto (ignorado pelo Git).
+
+```text
+DATABASE_URL="postgres://user_admin:user_admin@localhost:5432/db?schema=public"
+PORT=3335
+POSTGRESQL_USERNAME=user_admin
+POSTGRESQL_PASSWORD=user_admin
+POSTGRESQL_DATABASE=db
+POSTGRESQL_POSTGRES_PASSWORD=postgres123
+LIMITED_DB_USERNAME=app_user
+LIMITED_DB_PASSWORD=app_user
+```
+
+O Docker Compose lê o `.env` automaticamente e interpola os valores no `docker-compose.yaml` (`${POSTGRESQL_USERNAME}`, etc.).
+
+## Usuários do banco de dados
+
+O banco tem três papéis distintos, seguindo o princípio do menor privilégio:
+
+| Usuário | Papel | Uso |
+| --- | --- | --- |
+| `postgres` | Superuser | Só usado internamente pelo script de inicialização para criar o `app_user` |
+| `user_admin` (`POSTGRESQL_USERNAME`) | Owner do banco `db` | Rodar migrações do Prisma (`prisma migrate deploy`/`dev`), que exigem `CREATE`/`ALTER`/`DROP` |
+| `app_user` (`LIMITED_DB_USERNAME`) | Usuário de aplicação, sem DDL | Usado pela API em runtime (`DATABASE_URL` do container `api`) |
+
+O `app_user` é criado pelo script [db/init/01-create-limited-user.sh](db/init/01-create-limited-user.sh), montado em `/docker-entrypoint-initdb.d` e executado apenas na primeira inicialização de um volume vazio. Ele recebe só `SELECT`, `INSERT`, `UPDATE` e `DELETE` nas tabelas (e `USAGE`/`SELECT` nas sequences, necessárias para colunas `autoincrement`) — sem privilégios de `CREATE`, `ALTER` ou `DROP`, pois não é dono de nenhum objeto. Isso é reforçado por `ALTER DEFAULT PRIVILEGES FOR ROLE user_admin`, que garante que tabelas criadas depois por migrações também concedem acesso automaticamente ao `app_user`.
+
+Para comprovar o bloqueio:
+
+```powershell
+docker exec -e PGPASSWORD=app_user db psql -U app_user -d db -c "DROP TABLE registers;"
+# ERROR:  must be owner of table registers
+```
 
 ## Comandos úteis
 
@@ -110,14 +143,14 @@ docker compose down
 Com o banco em execução e o projeto configurado para usar a URL abaixo, as migrações podem ser aplicadas a partir do host:
 
 ```powershell
-$env:DATABASE_URL="postgresql://user123:user123@localhost:5432/db?schema=public"
+$env:DATABASE_URL="postgresql://user_admin:user_admin@localhost:5432/db?schema=public"
 npx prisma migrate deploy
 ```
 
 Para desenvolvimento, quando uma nova migração precisar ser criada:
 
 ```powershell
-$env:DATABASE_URL="postgresql://user123:user123@localhost:5432/db?schema=public"
+$env:DATABASE_URL="postgresql://user_admin:user_admin@localhost:5432/db?schema=public"
 npx prisma migrate dev --name nome-da-migracao
 ```
 
