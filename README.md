@@ -2,11 +2,28 @@
 
 API REST construída com NestJS, Prisma e PostgreSQL, executada em containers Docker.
 
+## Sobre o projeto
+
+Este repositório é um **template de estudo** usado para praticar conceitos de Docker, não um projeto de produção. O foco principal foi comparar o **tamanho da imagem antes e depois de aplicar multi-stage build** no `Dockerfile`, além de exercitar o uso de `docker-compose` com rede e volume nomeados para persistência do banco de dados.
+
+Comparação de tamanho de imagem observada durante os testes (`docker image ls`):
+
+![Comando docker image ls](./docs/imagens-docker.png)
+
+| Imagem | Estratégia | Base | Tamanho |
+| --- | --- | --- | ---: |
+| `api:v1` | Single-stage | `node:22` | ~2GB |
+| `api:v2` | Single-stage | `node:22-alpine3.24` | ~609MB |
+| `api:v3` | Multi-stage inicial com bibliotecas de desenvolvimento e produção | `node:22-alpine3.24` | ~531MB |
+| `api:v4` | Multi-stage inicial com somente bibliotecas de desenvolvimento | `node:22-alpine3.24` | ~258MB |
+
+A redução expressiva de `v1` para `v4` vem de dois fatores: separar a etapa de build (que precisa do toolchain completo do Node) da etapa final de execução, e trocar a imagem base final para uma variante `alpine`, muito mais enxuta.
+
 ## Pré-requisitos
 
 - Docker Desktop em execução
 - Docker Compose v2, disponível pelo comando `docker compose`
-- Portas `3335` e `5555` livres no host
+- Portas `3335` e `5432` livres no host
 
 ## Como funciona a comunicação
 
@@ -15,20 +32,9 @@ Os serviços `api` e `db` compartilham a rede Docker `api-network`.
 | Serviço | Container | Porta no container | Porta no host |
 | --- | --- | ---: | ---: |
 | API | `api` | `3335` | `3335` |
-| PostgreSQL | `db` | `5432` | `5555` |
+| PostgreSQL | `db` | `5432` | `5432` |
 
-Dentro da rede Docker, a API deve acessar o banco usando `db:5432`, e não `localhost:5555`. A porta `5555` existe apenas para permitir acesso ao PostgreSQL a partir da máquina host.
-
-## Preparação dos recursos Docker
-
-O `docker-compose.yaml` usa a rede e o volume como recursos externos. Crie-os uma vez antes da primeira execução:
-
-```powershell
-docker network create api-network
-docker volume create api-volume
-```
-
-Se algum recurso já existir, o Docker informará isso e ele poderá ser reutilizado.
+Dentro da rede Docker, a API deve acessar o banco usando `db:5432`, e não `localhost:5432`.
 
 ## Executar os containers
 
@@ -50,7 +56,7 @@ Verifique o estado dos serviços com:
 docker compose ps
 ```
 
-A API ficará disponível em `http://localhost:3335` e o PostgreSQL poderá ser acessado pelo host em `localhost:5555`.
+A API ficará disponível em `http://localhost:3335` e o PostgreSQL poderá ser acessado pelo host em `localhost:5432`.
 
 ## Testar a API e a conexão com o banco
 
@@ -67,22 +73,6 @@ Invoke-RestMethod -Method Post http://localhost:3335/registers
 ```
 
 Uma resposta sem erro indica que a API conseguiu resolver o container `db`, autenticar no PostgreSQL e executar a operação do Prisma.
-
-Também é possível testar diretamente a disponibilidade do PostgreSQL a partir da rede Docker:
-
-```powershell
-docker exec db pg_isready -h db -p 5432 -U user123 -d db
-```
-
-O resultado esperado contém `accepting connections`.
-
-Confirme que os dois containers estão na mesma rede:
-
-```powershell
-docker network inspect api-network
-```
-
-Na saída, os containers `api` e `db` devem aparecer na seção `Containers`.
 
 ## Variáveis de ambiente
 
@@ -115,34 +105,20 @@ Parar e remover os containers e a rede criada pelo Compose, preservando o volume
 docker compose down
 ```
 
-Remover também os dados persistidos do PostgreSQL, somente quando isso for desejado:
-
-```powershell
-docker compose down
-docker volume rm api-volume
-```
-
-Reconstruir a imagem sem usar o cache:
-
-```powershell
-docker compose build --no-cache api
-docker compose up -d
-```
-
 ## Execução local das migrações
 
 Com o banco em execução e o projeto configurado para usar a URL abaixo, as migrações podem ser aplicadas a partir do host:
 
 ```powershell
-$env:DATABASE_URL="postgresql://user123:user123@localhost:5555/db?schema=public"
+$env:DATABASE_URL="postgresql://user123:user123@localhost:5432/db?schema=public"
 npx prisma migrate deploy
 ```
 
 Para desenvolvimento, quando uma nova migração precisar ser criada:
 
 ```powershell
-$env:DATABASE_URL="postgresql://user123:user123@localhost:5555/db?schema=public"
+$env:DATABASE_URL="postgresql://user123:user123@localhost:5432/db?schema=public"
 npx prisma migrate dev --name nome-da-migracao
 ```
 
-Quando a API estiver rodando no Docker, mantenha `db:5432` na `DATABASE_URL`, pois `localhost:5555` não é o endereço correto entre containers.
+Quando a API estiver rodando no Docker, mantenha `db:5432` na `DATABASE_URL`, pois `localhost:5432` não é o endereço correto entre containers.
