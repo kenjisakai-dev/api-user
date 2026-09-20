@@ -1,0 +1,102 @@
+kind: Namespace
+apiVersion: v1
+
+metadata:
+  name: desafio-api
+
+---
+
+
+kind: Secret
+apiVersion: v1
+
+metadata:
+  name: api-secret
+  namespace: desafio-api
+
+type: Opaque
+stringData:
+  DATABASE_URL: postgresql://user_admin:user_admin@db-service.desafio-db.svc.cluster.local:5432/db
+
+---
+
+kind: Deployment
+apiVersion: apps/v1
+
+metadata:
+  name: api-user-deployment
+  namespace: desafio-api
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-user
+  template:
+    metadata:
+      labels:
+        app: api-user
+    spec:
+      containers:
+        - name: api-user
+          image: kenjidev/api-user:v3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3335
+          envFrom:
+            - secretRef:
+                name: api-secret
+          resources:
+            requests:
+              cpu: 200m
+              memory: 128Mi
+            limits:
+              cpu: 400m
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: 3335
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: 3335
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 1
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: 3335
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 1
+            failureThreshold: 3
+            successThreshold: 1
+
+---
+
+kind: Service
+apiVersion: v1
+
+metadata:
+  name: api-user-service-external
+  namespace: desafio-api
+
+spec:
+  type: NodePort
+  selector:
+    app: api-user
+  ports:
+    - protocol: TCP
+      port: 3335
+      targetPort: 3335
+      nodePort: 30035
+

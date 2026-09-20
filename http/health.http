@@ -1,0 +1,13 @@
+@baseUrl = http://localhost:3335/health
+
+### Verificar inicialização da API
+GET {{baseUrl}}/startup
+Accept: application/json
+
+### Verificar prontidão da API
+GET {{baseUrl}}/readiness
+Accept: application/json
+
+### Verificar vivacidade da API
+GET {{baseUrl}}/liveness
+Accept: application/json

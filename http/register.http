@@ -1,0 +1,5 @@
+@baseUrl = http://localhost:3335/registers
+
+### Criar registro
+POST {{baseUrl}}
+Accept: application/json

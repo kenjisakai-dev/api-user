@@ -1,0 +1,175 @@
+kind: Namespace
+apiVersion: v1
+
+metadata:
+  name: desafio-db
+
+---
+
+kind: ConfigMap
+apiVersion: v1
+
+metadata:
+  name: db-configmap
+  namespace: desafio-db
+
+data:
+  POSTGRESQL_DATABASE: db
+
+---
+
+kind: Secret
+apiVersion: v1
+
+metadata:
+  name: db-secret
+  namespace: desafio-db
+
+type: Opaque
+data:
+  POSTGRESQL_POSTGRES_PASSWORD: cG9zdGdyZXMxMjM=
+  POSTGRESQL_USERNAME: dXNlcl9hZG1pbg==
+  POSTGRESQL_PASSWORD: dXNlcl9hZG1pbg==
+  LIMITED_DB_USERNAME: YXBwX3VzZXI=
+  LIMITED_DB_PASSWORD: YXBwX3VzZXI=
+
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+
+metadata:
+  name: api-storage
+
+provisioner: kubernetes.io/no-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+
+---
+
+kind: PersistentVolume
+apiVersion: v1
+
+metadata:
+  name: api-pv
+
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: api-storage
+  hostPath:
+    path: /tmp/postgres-data
+
+---
+
+kind: PersistentVolumeClaim
+apiVersion: v1
+
+metadata:
+  name: db-pvc
+  namespace: desafio-db
+
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: api-storage
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+kind: Deployment
+apiVersion: apps/v1
+
+metadata:
+  name: db-deployment
+  namespace: desafio-db
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      securityContext:
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: init-db-permissions
+          image: bitnami/postgresql:latest
+          command:
+            - /bin/bash
+            - -ec
+            - chown -R 1001:1001 /bitnami/postgresql
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: db-data
+              mountPath: /bitnami/postgresql
+      containers:
+        - name: db
+          image: bitnami/postgresql:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - configMapRef:
+                name: db-configmap
+            - secretRef:
+                name: db-secret
+          securityContext:
+            runAsUser: 1001
+          volumeMounts:
+            - name: db-data
+              mountPath: /bitnami/postgresql
+      volumes:
+        - name: db-data
+          persistentVolumeClaim:
+            claimName: db-pvc
+
+---
+
+kind: Service
+apiVersion: v1
+
+metadata:
+  name: db-service
+  namespace: desafio-db
+
+spec:
+  type: ClusterIP
+  selector:
+    app: db
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+
+---
+
+kind: Service
+apiVersion: v1
+
+metadata:
+  name: db-service-external
+  namespace: desafio-db
+
+spec:
+  type: NodePort
+  selector:
+    app: db
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 30432
+
