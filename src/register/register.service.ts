@@ -8,4 +8,8 @@ export class RegisterService {
   async create(): Promise<void> {
     await this.prisma.register.create({});
   }
+
+  async getAll(): Promise<{ id: number; createdAt: Date }[]> {
+    return await this.prisma.register.findMany({});
+  }
 }

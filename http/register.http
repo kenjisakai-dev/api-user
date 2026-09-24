@@ -1,5 +1,9 @@
-@baseUrl = http://localhost:3335/registers
+@baseUrl = http://localhost:3335/dados
 
 ### Criar registro
 POST {{baseUrl}}
+Accept: application/json
+
+### Listar registros
+GET {{baseUrl}}?skip=1&take=10
 Accept: application/json

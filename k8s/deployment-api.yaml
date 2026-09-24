@@ -6,7 +6,6 @@ metadata:
 
 ---
 
-
 kind: Secret
 apiVersion: v1
 
@@ -16,7 +15,7 @@ metadata:
 
 type: Opaque
 stringData:
-  DATABASE_URL: postgresql://user_admin:user_admin@db-service.desafio-db.svc.cluster.local:5432/db
+  DATABASE_URL: postgresql://app_user:app_user@db-service.desafio-db.svc.cluster.local:5432/db
 
 ---
 
@@ -28,7 +27,12 @@ metadata:
   namespace: desafio-api
 
 spec:
-  replicas: 1
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: 
+      maxUnavailable: 1
+      maxSurge: 2
   selector:
     matchLabels:
       app: api-user
@@ -39,7 +43,7 @@ spec:
     spec:
       containers:
         - name: api-user
-          image: kenjidev/api-user:v3
+          image: kenjidev/api-user:v7
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3335
@@ -48,10 +52,10 @@ spec:
                 name: api-secret
           resources:
             requests:
-              cpu: 200m
+              cpu: 100m
               memory: 128Mi
             limits:
-              cpu: 400m
+              cpu: 200m
               memory: 256Mi
           startupProbe:
             httpGet:
@@ -80,6 +84,30 @@ spec:
             timeoutSeconds: 1
             failureThreshold: 3
             successThreshold: 1
+
+---
+
+kind: HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+
+metadata:
+  name: api-user-hpa
+  namespace: desafio-api
+
+spec:
+  scaleTargetRef:
+    kind: Deployment
+    apiVersion: apps/v1
+    name: api-user-deployment
+  minReplicas: 3
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
 
 ---
 

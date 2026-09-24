@@ -1,0 +1,157 @@
+# API User
+
+API REST construída com NestJS, Prisma e PostgreSQL, executada em containers Docker.
+
+## Sobre o projeto
+
+Este repositório é um **template de estudo** usado para praticar conceitos de Docker, não um projeto de produção. O foco principal foi comparar o **tamanho da imagem antes e depois de aplicar multi-stage build** no `Dockerfile`, além de exercitar o uso de `docker-compose` com rede e volume nomeados para persistência do banco de dados.
+
+Comparação de tamanho de imagem observada durante os testes (`docker image ls`):
+
+![Comando docker image ls](./docs/imagens-docker.png)
+
+| Imagem | Estratégia | Base | Tamanho |
+| --- | --- | --- | ---: |
+| `api:v1` | Single-stage | `node:22` | ~2GB |
+| `api:v2` | Single-stage | `node:22-alpine3.24` | ~609MB |
+| `api:v3` | Multi-stage inicial com bibliotecas de desenvolvimento e produção | `node:22-alpine3.24` | ~531MB |
+| `api:v4` | Multi-stage inicial com somente bibliotecas de produção | `node:22-alpine3.24` | ~258MB |
+
+A redução expressiva de `v1` para `v4` vem de dois fatores: separar a etapa de build (que precisa do toolchain completo do Node) da etapa final de execução, e trocar a imagem base final para uma variante `alpine`, muito mais enxuta.
+
+## Pré-requisitos
+
+- Docker Desktop em execução
+- Docker Compose v2, disponível pelo comando `docker compose`
+- Portas `3335` e `5432` livres no host
+
+## Como funciona a comunicação
+
+Os serviços `api` e `db` compartilham a rede Docker `api-network`.
+
+| Serviço | Container | Porta no container | Porta no host |
+| --- | --- | ---: | ---: |
+| API | `api` | `3335` | `3335` |
+| PostgreSQL | `db` | `5432` | `5432` |
+
+Dentro da rede Docker, a API deve acessar o banco usando `db:5432`, e não `localhost:5432`.
+
+## Executar os containers
+
+Na raiz do projeto, execute:
+
+```powershell
+docker compose up -d --build
+```
+
+Esse comando constrói a imagem da API, cria os containers `api` e `db` e os inicia em segundo plano. Para acompanhar a inicialização:
+
+```powershell
+docker compose logs -f api db
+```
+
+Verifique o estado dos serviços com:
+
+```powershell
+docker compose ps
+```
+
+A API ficará disponível em `http://localhost:3335` e o PostgreSQL poderá ser acessado pelo host em `localhost:5432`.
+
+## Testar a API e a conexão com o banco
+
+Primeiro, teste a rota de saúde da API:
+
+```powershell
+Invoke-RestMethod http://localhost:3335/health
+```
+
+Para testar a conexão entre a API e o PostgreSQL, crie um registro. Essa requisição precisa chegar à API e fazer uma inserção no banco usando `db:5432`:
+
+```powershell
+Invoke-RestMethod -Method Post http://localhost:3335/dados
+```
+
+Uma resposta sem erro indica que a API conseguiu resolver o container `db`, autenticar no PostgreSQL e executar a operação do Prisma.
+
+Para confirmar que os dois containers estão na mesma rede `api-network`:
+
+```powershell
+docker network inspect api-network
+```
+
+Na saída, os containers `api` e `db` devem aparecer na seção `Containers`.
+
+## Variáveis de ambiente
+
+Nenhum valor sensível fica hardcoded no código ou no `docker-compose.yaml`: todas as configurações vêm de variáveis de ambiente, lidas de um arquivo `.env` na raiz do projeto (ignorado pelo Git).
+
+```text
+DATABASE_URL="postgres://user_admin:user_admin@localhost:5432/db?schema=public"
+PORT=3335
+POSTGRESQL_USERNAME=user_admin
+POSTGRESQL_PASSWORD=user_admin
+POSTGRESQL_DATABASE=db
+POSTGRESQL_POSTGRES_PASSWORD=postgres123
+LIMITED_DB_USERNAME=app_user
+LIMITED_DB_PASSWORD=app_user
+```
+
+O Docker Compose lê o `.env` automaticamente e interpola os valores no `docker-compose.yaml` (`${POSTGRESQL_USERNAME}`, etc.).
+
+## Usuários do banco de dados
+
+O banco tem três papéis distintos, seguindo o princípio do menor privilégio:
+
+| Usuário | Papel | Uso |
+| --- | --- | --- |
+| `postgres` | Superuser | Só usado internamente pelo script de inicialização para criar o `app_user` |
+| `user_admin` (`POSTGRESQL_USERNAME`) | Owner do banco `db` | Rodar migrações do Prisma (`prisma migrate deploy`/`dev`), que exigem `CREATE`/`ALTER`/`DROP` |
+| `app_user` (`LIMITED_DB_USERNAME`) | Usuário de aplicação, sem DDL | Usado pela API em runtime (`DATABASE_URL` do container `api`) |
+
+O `app_user` é criado pelo script [db/init/01-create-limited-user.sh](db/init/01-create-limited-user.sh), montado em `/docker-entrypoint-initdb.d` e executado apenas na primeira inicialização de um volume vazio. Ele recebe só `SELECT`, `INSERT`, `UPDATE` e `DELETE` nas tabelas (e `USAGE`/`SELECT` nas sequences, necessárias para colunas `autoincrement`) — sem privilégios de `CREATE`, `ALTER` ou `DROP`, pois não é dono de nenhum objeto. Isso é reforçado por `ALTER DEFAULT PRIVILEGES FOR ROLE user_admin`, que garante que tabelas criadas depois por migrações também concedem acesso automaticamente ao `app_user`.
+
+Para comprovar o bloqueio:
+
+```powershell
+docker exec -e PGPASSWORD=app_user db psql -U app_user -d db -c "DROP TABLE registers;"
+# ERROR:  must be owner of table registers
+```
+
+## Comandos úteis
+
+Parar os containers sem remover os dados:
+
+```powershell
+docker compose stop
+```
+
+Iniciar novamente os containers já criados:
+
+```powershell
+docker compose start
+```
+
+Parar e remover os containers e a rede criada pelo Compose, preservando o volume:
+
+```powershell
+docker compose down
+```
+
+## Execução local das migrações
+
+Com o banco em execução e o projeto configurado para usar a URL abaixo, as migrações podem ser aplicadas a partir do host:
+
+```powershell
+$env:DATABASE_URL="postgresql://user_admin:user_admin@localhost:5432/db?schema=public"
+npx prisma migrate deploy
+```
+
+Para desenvolvimento, quando uma nova migração precisar ser criada:
+
+```powershell
+$env:DATABASE_URL="postgresql://user_admin:user_admin@localhost:5432/db?schema=public"
+npx prisma migrate dev --name nome-da-migracao
+```
+
+Quando a API estiver rodando no Docker, mantenha `db:5432` na `DATABASE_URL`, pois `localhost:5432` não é o endereço correto entre containers.

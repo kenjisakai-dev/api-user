@@ -16,7 +16,7 @@ export class HealthService {
   }
 
   async readiness(): Promise<{ status: string; connected: boolean; now: string }> {
-    const connected = await this.isDatabaseConnected();
+    const connected = await this.prisma.isDatabaseConnected();
 
     console.log(`Readiness check ${new Date().toISOString()}`);
 
@@ -35,14 +35,5 @@ export class HealthService {
       connected: true,
       now: new Date().toISOString(),
     };
-  }
-
-  async isDatabaseConnected(): Promise<boolean> {
-    try {
-      await this.prisma.$queryRaw`SELECT 1`;
-      return true;
-    } catch {
-      return false;
-    }
   }
 }

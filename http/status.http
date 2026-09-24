@@ -1,0 +1,5 @@
+@baseUrl = http://localhost:3335/status
+
+### Listar status
+GET {{baseUrl}}
+Accept: application/json
